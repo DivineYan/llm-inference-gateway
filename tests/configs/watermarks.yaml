@@ -1,0 +1,19 @@
+# 测试专用：小水位线，宽松限流，专测优先级调度的迟滞行为。
+callers:
+  - credential: "m"
+    caller_id: "svc:test"
+    type: machine
+    owner: t
+    priority: high
+    rate_limit: { rate_per_sec: 1000, burst: 1000 }
+    allowed_models: [gpt]
+  - credential: "h"
+    caller_id: "user:test"
+    type: human
+    owner: t
+    priority: low
+    rate_limit: { rate_per_sec: 1000, burst: 1000 }
+    allowed_models: [gpt]
+backends:
+  - { name: gpt-a, model: gpt, address: "mock://gpt-a", weight: 1, healthy: true }
+thresholds: { high_watermark: 3, low_watermark: 1 }

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& \"D:\\\\Python\\\\envs\\\\agent_project\\\\python.exe\" -m pytest -q 2>&1)"
+    ]
+  }
+}

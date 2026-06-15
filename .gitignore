@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 本地 / 私密（绝不提交 API key）
+.env
+*.local.yaml
+secrets*.yaml
+
+# 临时脚本（leetcode 草稿，与项目无关）
+lc.py

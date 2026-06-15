@@ -1,0 +1,76 @@
+# 网关配置 —— M1 §4.5。改阈值改这里，不改代码（NFR-6）。
+
+# ── 调用方画像表（凭证 → 画像）─────────────────────────────
+callers:
+  # 机器调用方：按服务维度限流，默认高优先级
+  - credential: "key-search-machine"
+    caller_id: "svc:search"
+    type: machine
+    owner: "搜索服务"
+    priority: high
+    rate_limit: { rate_per_sec: 50, burst: 50 }
+    allowed_models: [gpt, claude, local]
+
+  # 人类调用方：按用户维度限流，默认低优先级
+  - credential: "key-zhangsan-human"
+    caller_id: "user:zhangsan"
+    type: human
+    owner: "员工-张三"
+    priority: low
+    rate_limit: { rate_per_sec: 10, burst: 10 }
+    allowed_models: [gpt]
+
+# ── 后端列表 ──────────────────────────────────────────────
+backends:
+  # gpt 配两个后端，权重 3:1，用于验证加权轮询命中分布
+  - { name: gpt-a, model: gpt,    address: "mock://gpt-a",   weight: 3, healthy: true }
+  - { name: gpt-b, model: gpt,    address: "mock://gpt-b",   weight: 1, healthy: true }
+  - { name: claude-a, model: claude, address: "mock://claude-a", weight: 1, healthy: true }
+  # local 模型仅配一个不健康后端，用于验证 503 no_backend
+  - { name: local-a, model: local,  address: "mock://local-a",  weight: 1, healthy: false }
+  # ── 真实模型示例（OpenAI/DeepSeek/Qwen/Kimi 均为 OpenAI 兼容协议）──
+  # API key 走环境变量（api_key_env 只写变量名，绝不把 key 写进配置）。取消注释即启用：
+  # - { name: deepseek, model: gpt, provider: openai_compatible,
+  #     base_url: "https://api.deepseek.com/v1", api_key_env: DEEPSEEK_API_KEY, real_model: "deepseek-chat" }
+  # - { name: kimi, model: gpt, provider: openai_compatible,
+  #     base_url: "https://api.moonshot.cn/v1", api_key_env: MOONSHOT_API_KEY, real_model: "moonshot-v1-8k" }
+
+# ── 全局容量水位线（在途请求数）—— 两线留迟滞防抖 ──────────
+thresholds:
+  high_watermark: 10  # 在途 ≥ 10 → 紧张，开始抢占低优先级
+  low_watermark: 3    # 在途 ≤ 3  → 恢复正常
+
+# ── M2 保障层参数（两类调用方共用，PRD §2.2）—— 改参数改这里 ──
+safeguard:
+  retry:                  # ② 重试与退避
+    max_attempts: 3       # 单后端最大尝试次数（含首次）
+    base_backoff_ms: 50   # 退避基数
+    max_backoff_ms: 1000  # 退避上限
+  circuit:                # ① 熔断器
+    window_seconds: 10    # 失败率统计窗口
+    failure_rate: 0.5     # 跳闸失败率阈值
+    min_samples: 5        # 最小样本数，不足不跳闸
+    cooldown_seconds: 5   # Open → Half-Open 冷却时间
+    half_open_probes: 1   # 半开态探针数
+  degrade:                # ③ 降级
+    fallback_model: {}    # 模型→备用模型映射（默认不跨模型降级；示例：{gpt: claude}）
+    fallback_response: "服务繁忙，请稍后重试"
+
+# ── M3 Agent 编排层护栏（harness）+ Tier5 自治巡检 ──
+agent:
+  # autopilot 后台周期巡检（默认关）。开启后真启动(uvicorn)时自动每 interval_s 跑一轮，
+  # 多实例下用 Redis 领导锁只一个实例 tick。测试不跑 lifespan 故不受影响。
+  autopilot:
+    enabled: false        # ← 改 true 即开启自治巡检
+    interval_s: 30        # 巡检间隔（应 ≥ window_s）
+    sustained: 2          # 连续 N 轮熔断才算"持续"
+    window_s: 60          # 摘除后观察窗（到期判保留/回滚）
+    metric_window_s: 300  # 评估 error_rate 的遥测窗口
+
+# ── M3 Agent 编排层护栏（harness，详见 M3_HARNESS.md）── 改参数改这里 ──
+agent:
+  max_steps: 6            # H1  ReAct 循环步数上界
+  tool_timeout_s: 5       # H13 单次工具/模型调用超时（硬中止挂住）
+  max_obs_chars: 2000     # H12a 单条观测注入上下文前截断长度
+  max_repair: 2           # H15/H17 连续错误观测修复上限
+  max_repeat: 2           # H16 同一工具调用重复上限

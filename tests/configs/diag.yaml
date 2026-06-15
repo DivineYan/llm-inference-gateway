@@ -1,0 +1,33 @@
+# M3-T6 诊断配置：gpt-a 必失败、gpt-b 正常。少量请求即把 gpt-a 熔断打开，
+# 供 ReAct agent 通过 get_backend_health/query_metrics 定位根因。
+callers:
+  - credential: "m"
+    caller_id: "svc:test"
+    type: machine
+    owner: "测试服务"
+    priority: high
+    rate_limit: { rate_per_sec: 1000, burst: 1000 }
+    allowed_models: [gpt]
+
+backends:
+  - { name: gpt-a, model: gpt, address: "mock://a", weight: 3, behavior: failure }
+  - { name: gpt-b, model: gpt, address: "mock://b", weight: 1 }
+
+thresholds:
+  high_watermark: 1000
+  low_watermark: 1
+
+safeguard:
+  retry:
+    max_attempts: 1
+    base_backoff_ms: 0
+    max_backoff_ms: 0
+  circuit:
+    window_seconds: 100
+    failure_rate: 0.5
+    min_samples: 3
+    cooldown_seconds: 100
+    half_open_probes: 1
+  degrade:
+    fallback_model: {}
+    fallback_response: "兜底"

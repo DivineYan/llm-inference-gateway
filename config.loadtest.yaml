@@ -1,0 +1,35 @@
+# 压测专用配置 —— 故意覆盖全部 reason 码，供流量生成器压网关 + 攒丰富遥测。
+# 用法见 scripts/load_gen.py。
+
+callers:
+  # 机器调用方：高优先级、高限流（制造主流量 + 撑高在途）
+  - credential: "k-svc"
+    caller_id: "svc:search"
+    type: machine
+    owner: "搜索服务"
+    priority: high
+    rate_limit: { rate_per_sec: 200, burst: 200 }
+    allowed_models: [gpt, slow, bad, local]
+  # 人类调用方：低优先级、低限流（吃 rate_limited + 紧张时被 preempted）
+  - credential: "k-user"
+    caller_id: "user:zhangsan"
+    type: human
+    owner: "员工-张三"
+    priority: low
+    rate_limit: { rate_per_sec: 10, burst: 10 }
+    allowed_models: [gpt, slow, bad]
+
+backends:
+  - { name: gpt-a, model: gpt,  address: "mock://gpt-a", weight: 3 }   # 正常成功
+  - { name: gpt-b, model: gpt,  address: "mock://gpt-b", weight: 1 }
+  - { name: slow-a, model: slow, address: "mock://slow-a", behavior: slow, delay_ms: 300 }  # 撑高在途→抢占
+  - { name: bad-a, model: bad,  address: "mock://bad-a", behavior: failure }  # 全失败→served_fallback
+  - { name: local-a, model: local, address: "mock://local-a", healthy: false }  # 无健康后端→no_backend
+
+# 低水位线，让 slow 流量很快把在途顶过警戒线 → 紧张 → 抢占低优
+thresholds: { high_watermark: 15, low_watermark: 5 }
+
+safeguard:
+  retry:   { max_attempts: 1, base_backoff_ms: 1, max_backoff_ms: 10 }
+  circuit: { window_seconds: 30, failure_rate: 0.5, min_samples: 5, cooldown_seconds: 10, half_open_probes: 1 }
+  degrade: { fallback_model: {}, fallback_response: "服务繁忙，请稍后重试" }

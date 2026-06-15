@@ -1,0 +1,32 @@
+# 水平扩展验证专用 —— 高限流、关抢占，纯测网关吞吐随 worker 数的扩展。
+# 用法见下方命令：起 uvicorn --workers N + load_gen --url，对比吞吐。
+
+callers:
+  - credential: "k-svc"
+    caller_id: "svc:search"
+    type: machine
+    owner: "搜索服务"
+    priority: high
+    rate_limit: { rate_per_sec: 1000000, burst: 1000000 }   # 不限流，避免卡住吞吐
+    allowed_models: [gpt, slow, bad, local]
+  - credential: "k-user"
+    caller_id: "user:zhangsan"
+    type: human
+    owner: "员工-张三"
+    priority: low
+    rate_limit: { rate_per_sec: 1000000, burst: 1000000 }
+    allowed_models: [gpt, slow, bad]
+
+backends:
+  - { name: gpt-a, model: gpt,  address: "mock://gpt-a", weight: 3 }
+  - { name: gpt-b, model: gpt,  address: "mock://gpt-b", weight: 1 }
+  - { name: slow-a, model: slow, address: "mock://slow-a", behavior: slow, delay_ms: 300 }
+  - { name: bad-a, model: bad,  address: "mock://bad-a", behavior: failure }
+  - { name: local-a, model: local, address: "mock://local-a", healthy: false }
+
+thresholds: { high_watermark: 1000000, low_watermark: 1 }   # 关抢占
+
+safeguard:
+  retry:   { max_attempts: 1, base_backoff_ms: 1, max_backoff_ms: 10 }
+  circuit: { window_seconds: 30, failure_rate: 0.99, min_samples: 1000000, cooldown_seconds: 10, half_open_probes: 1 }
+  degrade: { fallback_model: {}, fallback_response: "x" }

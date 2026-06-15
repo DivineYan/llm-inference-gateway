@@ -1,0 +1,38 @@
+# M2-T6 集成测试配置：故意配置故障后端，端到端验证保障层。
+callers:
+  - credential: "m"
+    caller_id: "svc:test"
+    type: machine
+    owner: "测试服务"
+    priority: high
+    rate_limit: { rate_per_sec: 1000, burst: 1000 }
+    allowed_models: [gpt, claude, down, ha]
+
+backends:
+  # gpt 唯一后端故障 → 触发降级到备用模型 claude
+  - { name: gpt-bad,   model: gpt,    address: "mock://x", behavior: failure }
+  - { name: claude-ok, model: claude, address: "mock://x", behavior: success }
+  # down 唯一后端故障且无备用 → 兜底
+  - { name: down-bad,  model: down,   address: "mock://x", behavior: failure }
+  # ha 双后端：第一个故障、第二个成功 → 同模型 failover（不算降级）
+  - { name: ha-a, model: ha, address: "mock://x", weight: 5, behavior: failure }
+  - { name: ha-b, model: ha, address: "mock://x", weight: 1, behavior: success }
+
+thresholds:
+  high_watermark: 1000   # 调高，避免测试中触发抢占
+  low_watermark: 1
+
+safeguard:
+  retry:
+    max_attempts: 2
+    base_backoff_ms: 0     # 不真等，用例秒过
+    max_backoff_ms: 0
+  circuit:
+    window_seconds: 100
+    failure_rate: 0.5
+    min_samples: 100       # 调高，避免测试中误跳闸（熔断本身在 T3/T8 验证）
+    cooldown_seconds: 100
+    half_open_probes: 1
+  degrade:
+    fallback_model: { gpt: claude }
+    fallback_response: "兜底响应"
