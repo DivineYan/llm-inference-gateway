@@ -29,3 +29,12 @@ secrets*.yaml
 
 # 临时脚本（leetcode 草稿，与项目无关）
 lc.py
+
+# 内部设计文档 / AI 指令 / 需求文档（仅本地保留，不上传 GitHub）
+M1.md
+M2.md
+M3.md
+M3_HARNESS.md
+M3_TIER4.md
+CLAUDE.md
+AI推理调度平台_需求文档 (1).md
